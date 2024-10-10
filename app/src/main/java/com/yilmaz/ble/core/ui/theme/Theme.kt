@@ -1,4 +1,4 @@
-package com.yilmaz.ble.ui.theme
+package com.yilmaz.ble.core.ui.theme
 
 import android.app.Activity
 import android.os.Build
