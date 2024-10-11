@@ -5,5 +5,5 @@ import com.yilmaz.ble.features.ble.domain.model.BluetoothDeviceModel
 data class HomeState(
     val scannedDevices: List<BluetoothDeviceModel> = emptyList(),
     val pairedDevices: List<BluetoothDeviceModel> = emptyList(),
-    val errorMessage: String? = null,
+    val message: String? = null,
 )

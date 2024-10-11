@@ -36,14 +36,14 @@ class HomeViewModel @Inject constructor(
     )
 
     init {
-        getErrors()
+        getMessage()
     }
 
-    private fun getErrors() {
-        bleController.errors.onEach { error ->
+    private fun getMessage() {
+        bleController.message.onEach { message ->
             _state.update {
                 it.copy(
-                    errorMessage = error
+                    message = message
                 )
             }
         }.launchIn(viewModelScope)
@@ -59,6 +59,10 @@ class HomeViewModel @Inject constructor(
 
     fun pair(address: String) {
         bleController.pair(address)
+    }
+
+    fun connect(address: String) {
+        bleController.connect(address)
     }
 
     override fun onCleared() {

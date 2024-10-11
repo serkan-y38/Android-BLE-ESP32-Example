@@ -27,8 +27,8 @@ fun HomeScreen(
         SnackbarHostState()
     }
 
-    LaunchedEffect(key1 = state.errorMessage) {
-        state.errorMessage?.let { message ->
+    LaunchedEffect(key1 = state.message) {
+        state.message?.let { message ->
             hostState.showSnackbar(message)
         }
     }
@@ -44,7 +44,7 @@ fun HomeScreen(
             DevicesScreen(
                 pairedDevices = state.pairedDevices,
                 scannedDevices = state.scannedDevices,
-                onPairedDevicesItemClick = { },
+                onPairedDevicesItemClick = { device -> viewModel.connect(device.address) },
                 onScannedDevicesItemClick = { device -> viewModel.pair(device.address) },
                 onStartScan = { viewModel.startScan() },
                 onStopScan = { viewModel.stopScan() },

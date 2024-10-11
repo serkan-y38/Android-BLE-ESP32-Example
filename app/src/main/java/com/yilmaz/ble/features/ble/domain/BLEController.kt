@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.StateFlow
 interface BLEController {
     val scannedDevices: StateFlow<List<BluetoothDeviceModel>>
     val pairedDevices: StateFlow<List<BluetoothDeviceModel>>
-    val errors: SharedFlow<String>
+    val message: SharedFlow<String>
 
     fun startScan()
 
@@ -16,4 +16,6 @@ interface BLEController {
     fun release()
 
     fun pair(address: String)
+
+    fun connect(address: String)
 }

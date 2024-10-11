@@ -9,7 +9,8 @@ import android.os.Build
 
 class PairDeviceReceiver(
     private val onPairRequest: () -> Unit,
-    private val onPairedSuccessfully: () -> Unit
+    private val onPairedSuccessfully: (BluetoothDevice?) -> Unit,
+    private val onPairingError: (BluetoothDevice?) -> Unit,
 ) : BroadcastReceiver() {
 
     @SuppressLint("MissingPermission")
@@ -26,12 +27,15 @@ class PairDeviceReceiver(
                     intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
                 }
 
-                device?.let {
-                    when (it.bondState) {
-                        BluetoothDevice.BOND_BONDED -> {
-                            onPairedSuccessfully()
-                        }
-                    }
+                val bondState = intent.getIntExtra(
+                    BluetoothDevice.EXTRA_BOND_STATE,
+                    BluetoothDevice.BOND_NONE
+                )
+
+                if (bondState == BluetoothDevice.BOND_BONDED) {
+                    onPairedSuccessfully(device)
+                } else {
+                    onPairingError(device)
                 }
             }
 
@@ -62,10 +66,9 @@ class PairDeviceReceiver(
 
                         d.setPin(pinBytes)
                         d.setPairingConfirmation(true)
-
-                        onPairRequest()
                     }
                 }
+                onPairRequest()
             }
         }
     }

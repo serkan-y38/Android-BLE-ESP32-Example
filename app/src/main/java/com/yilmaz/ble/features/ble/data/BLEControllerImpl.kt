@@ -3,7 +3,13 @@ package com.yilmaz.ble.features.ble.data
 import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothDevice.TRANSPORT_LE
+import android.bluetooth.BluetoothGatt
+import android.bluetooth.BluetoothGattCallback
+import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.content.Context
@@ -25,6 +31,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 @SuppressLint("MissingPermission")
 class BLEControllerImpl(
@@ -41,6 +48,7 @@ class BLEControllerImpl(
 
     private var isScanning = false
     private var isPairDeviceReceiverRegistered = false
+    private var bluetoothGatt: BluetoothGatt? = null
 
     private val _scannedDevices = MutableStateFlow<List<BluetoothDeviceModel>>(emptyList())
     override val scannedDevices: StateFlow<List<BluetoothDeviceModel>>
@@ -50,9 +58,9 @@ class BLEControllerImpl(
     override val pairedDevices: StateFlow<List<BluetoothDeviceModel>>
         get() = _pairedDevices.asStateFlow()
 
-    private val _errors = MutableSharedFlow<String>()
-    override val errors: SharedFlow<String>
-        get() = _errors.asSharedFlow()
+    private val _message = MutableSharedFlow<String>()
+    override val message: SharedFlow<String>
+        get() = _message.asSharedFlow()
 
     private val leScanCallback: ScanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
@@ -64,17 +72,93 @@ class BLEControllerImpl(
         }
     }
 
+    private val gattCallback = object : BluetoothGattCallback() {
+
+        override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+            val deviceAddress = gatt.device.address
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                if (newState == BluetoothProfile.STATE_CONNECTED) {
+                    setMessage("Successfully connected to $deviceAddress")
+                    gatt.discoverServices()
+                } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                    setMessage("Successfully disconnected from $deviceAddress")
+                    gatt.close()
+                }
+            } else {
+                setMessage("Error $status encountered for $deviceAddress! Disconnecting...")
+                gatt.close()
+            }
+        }
+
+        override fun onCharacteristicChanged(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            value: ByteArray
+        ) {
+            super.onCharacteristicChanged(gatt, characteristic, value)
+            if (characteristic.uuid == UUID.fromString("22bf526e-1f59-40fb-a344-0bea8c1bfef2")) {
+                @Suppress("DEPRECATION")
+                val receivedValue = characteristic.value?.let { byteArray ->
+                    String(byteArray, Charsets.UTF_8)
+                } ?: "No value received"
+
+                Log.i("BLE", "Received value: $receivedValue")
+            }
+        }
+
+        override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                gatt.getService(UUID.fromString(SERVICE_UUID)).let { service ->
+
+                    val characteristic =
+                        service.getCharacteristic(UUID.fromString(CHARACTERISTIC_UUID))
+
+                    if (characteristic != null) {
+                        gatt.setCharacteristicNotification(characteristic, true)
+
+                        val descriptor = characteristic.getDescriptor(
+                            UUID.fromString(CLIENT_CHARACTERISTIC_CONFIG_UUID)
+                        )
+                        descriptor?.let {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                gatt.writeDescriptor(
+                                    it,
+                                    BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                                )
+                            } else {
+                                @Suppress("DEPRECATION")
+                                it.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                                @Suppress("DEPRECATION")
+                                gatt.writeDescriptor(it)
+                            }
+                        }
+                    } else {
+                        setMessage("Characteristic not found!")
+                    }
+
+                } ?: run {
+                    setMessage("Service not found!")
+                }
+            } else {
+                setMessage("Service discovery failed with status: $status")
+            }
+        }
+    }
+
     private val pairDeviceReceiver = PairDeviceReceiver(
         onPairRequest = {
-            Log.i("BLEControllerImpl -> ", "pairing request sent")
+            setMessage("Pairing request sent")
         },
-        onPairedSuccessfully = {
-            Log.i("BLEControllerImpl -> ", "bond state changed")
+        onPairedSuccessfully = { device ->
+            setMessage("Connected to ${device?.address}")
 
             stopScan()
             getPairedDevices()
 
             _scannedDevices.update { emptyList() }
+        },
+        onPairingError = { device ->
+            setMessage("Cannot connected to device ${device?.address}")
         }
     )
 
@@ -84,17 +168,17 @@ class BLEControllerImpl(
 
     override fun startScan() {
         if (!hasBluetoothScanPermission()) {
-            error("No bluetooth permission")
+            setMessage("No bluetooth permission")
             return
         }
 
         if (!isBluetoothEnabled()) {
-            error("Bluetooth not enabled")
+            setMessage("Bluetooth not enabled")
             return
         }
 
         if (isScanning) {
-            error("Scanning")
+            setMessage("Scanning")
             return
         }
 
@@ -112,17 +196,17 @@ class BLEControllerImpl(
     @SuppressLint("MissingPermission")
     override fun stopScan() {
         if (!hasBluetoothScanPermission()) {
-            error("No bluetooth permission")
+            setMessage("No bluetooth permission")
             return
         }
 
         if (!isBluetoothEnabled()) {
-            error("Bluetooth not enabled")
+            setMessage("Bluetooth not enabled")
             return
         }
 
         if (!isScanning) {
-            error("!Scanning")
+            setMessage("!Scanning")
             return
         }
 
@@ -131,6 +215,9 @@ class BLEControllerImpl(
     }
 
     override fun release() {
+        bluetoothGatt?.disconnect()
+        bluetoothGatt?.close()
+
         if (isPairDeviceReceiverRegistered) context.unregisterReceiver(pairDeviceReceiver)
     }
 
@@ -142,20 +229,21 @@ class BLEControllerImpl(
             try {
                 device.createBond()
             } catch (e: Exception) {
-                CoroutineScope(Dispatchers.IO).launch {
-                    _errors.emit("Failed to pair with device: ${e.message}")
-                }
+                setMessage(("Failed to pair with device: ${e.message}"))
             }
         } ?: run {
-            CoroutineScope(Dispatchers.IO).launch {
-                _errors.emit("Device not found with address: $address")
-            }
+            setMessage("Device not found with address: $address")
         }
+    }
+
+    override fun connect(address: String) {
+        val device = bluetoothAdapter?.getRemoteDevice(address)
+        bluetoothGatt = device?.connectGatt(context, false, gattCallback, TRANSPORT_LE)
     }
 
     private fun getPairedDevices() {
         if (!hasBluetoothConnectPermission()) {
-            error("No BLUETOOTH_CONNECT permission")
+            setMessage("No BLUETOOTH_CONNECT permission")
             return
         }
 
@@ -205,12 +293,18 @@ class BLEControllerImpl(
 
     private fun isBluetoothEnabled() = bluetoothAdapter?.isEnabled == true
 
-    private fun error(text: String) {
+    private fun setMessage(text: String) {
         CoroutineScope(Dispatchers.IO).launch {
-            _errors.emit(text)
+            _message.emit(text)
         }
     }
 
     private fun hasPermission(permission: String) =
         context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+
+    companion object {
+        private const val SERVICE_UUID = "22bf526e-1f59-40fb-a344-0bea8c1bfef2"
+        private const val CHARACTERISTIC_UUID = "22bf526e-1f59-40fb-a344-0bea8c1bfef2"
+        private const val CLIENT_CHARACTERISTIC_CONFIG_UUID = "00002902-0000-1000-8000-00805f9b34fb"
+    }
 }
