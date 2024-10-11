@@ -58,9 +58,21 @@ class BLEControllerImpl(
     override val pairedDevices: StateFlow<List<BluetoothDeviceModel>>
         get() = _pairedDevices.asStateFlow()
 
+    private val _receivedValues = MutableStateFlow<List<String>>(emptyList())
+    override val receivedValues: StateFlow<List<String>>
+        get() = _receivedValues.asStateFlow()
+
     private val _message = MutableSharedFlow<String>()
     override val message: SharedFlow<String>
         get() = _message.asSharedFlow()
+
+    private val _isConnected = MutableStateFlow(false)
+    override val isConnected: StateFlow<Boolean>
+        get() = _isConnected.asStateFlow()
+
+    private val _connectedDeviceName = MutableStateFlow("")
+    override val connectedDeviceName: StateFlow<String>
+        get() = _connectedDeviceName.asStateFlow()
 
     private val leScanCallback: ScanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
@@ -75,39 +87,32 @@ class BLEControllerImpl(
     private val gattCallback = object : BluetoothGattCallback() {
 
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
-            val deviceAddress = gatt.device.address
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
-                    setMessage("Successfully connected to $deviceAddress")
+                    setMessage("Successfully connected to ${gatt.device.address}")
+                    _isConnected.update { true }
+                    _connectedDeviceName.update { gatt.device.name }
                     gatt.discoverServices()
+
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                    setMessage("Successfully disconnected from $deviceAddress")
+                    setMessage("Successfully disconnected from ${gatt.device.address}")
+                    _isConnected.update { false }
+                    _connectedDeviceName.update { "" }
                     gatt.close()
                 }
+
             } else {
-                setMessage("Error $status encountered for $deviceAddress! Disconnecting...")
+                setMessage("Error $status encountered for ${gatt.device.address} Disconnecting...")
+                _isConnected.update { false }
+                _connectedDeviceName.update { "" }
                 gatt.close()
-            }
-        }
-
-        override fun onCharacteristicChanged(
-            gatt: BluetoothGatt,
-            characteristic: BluetoothGattCharacteristic,
-            value: ByteArray
-        ) {
-            super.onCharacteristicChanged(gatt, characteristic, value)
-            if (characteristic.uuid == UUID.fromString("22bf526e-1f59-40fb-a344-0bea8c1bfef2")) {
-                @Suppress("DEPRECATION")
-                val receivedValue = characteristic.value?.let { byteArray ->
-                    String(byteArray, Charsets.UTF_8)
-                } ?: "No value received"
-
-                Log.i("BLE", "Received value: $receivedValue")
             }
         }
 
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
+                gatt.printGattTable()
+
                 gatt.getService(UUID.fromString(SERVICE_UUID)).let { service ->
 
                     val characteristic =
@@ -141,6 +146,24 @@ class BLEControllerImpl(
                 }
             } else {
                 setMessage("Service discovery failed with status: $status")
+            }
+        }
+
+        override fun onCharacteristicChanged(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            value: ByteArray
+        ) {
+            super.onCharacteristicChanged(gatt, characteristic, value)
+            if (characteristic.uuid == UUID.fromString(CHARACTERISTIC_UUID)) {
+                @Suppress("DEPRECATION")
+                val receivedValue = characteristic.value?.let { byteArray ->
+                    String(byteArray, Charsets.UTF_8)
+                } ?: "No value received"
+
+                _receivedValues.update { values ->
+                    values + receivedValue
+                }
             }
         }
     }
@@ -215,8 +238,7 @@ class BLEControllerImpl(
     }
 
     override fun release() {
-        bluetoothGatt?.disconnect()
-        bluetoothGatt?.close()
+        disConnect()
 
         if (isPairDeviceReceiverRegistered) context.unregisterReceiver(pairDeviceReceiver)
     }
@@ -239,6 +261,17 @@ class BLEControllerImpl(
     override fun connect(address: String) {
         val device = bluetoothAdapter?.getRemoteDevice(address)
         bluetoothGatt = device?.connectGatt(context, false, gattCallback, TRANSPORT_LE)
+    }
+
+    override fun disConnect() {
+        bluetoothGatt?.disconnect()
+        bluetoothGatt?.close()
+
+        _isConnected.update { false }
+        _connectedDeviceName.update { "" }
+        _receivedValues.update { emptyList() }
+
+        setMessage("Successfully disconnected from ${bluetoothGatt?.device?.address}")
     }
 
     private fun getPairedDevices() {
@@ -301,6 +334,26 @@ class BLEControllerImpl(
 
     private fun hasPermission(permission: String) =
         context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+
+    private fun BluetoothGatt.printGattTable() {
+        if (services.isEmpty()) {
+            Log.i(
+                "printGattTable",
+                "No service and characteristic available"
+            )
+        } else {
+            services.forEach { service ->
+                val characteristicsTable = service.characteristics.joinToString(
+                    separator = "\n|--",
+                    prefix = "|--"
+                ) { it.uuid.toString() }
+                Log.i(
+                    "printGattTable",
+                    "\nService ${service.uuid}\nCharacteristics:\n$characteristicsTable"
+                )
+            }
+        }
+    }
 
     companion object {
         private const val SERVICE_UUID = "22bf526e-1f59-40fb-a344-0bea8c1bfef2"

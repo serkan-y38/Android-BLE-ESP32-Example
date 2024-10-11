@@ -14,7 +14,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
-import com.yilmaz.ble.features.ble.presentation.screen.home_screen.components.DevicesScreen
+import com.yilmaz.ble.features.ble.presentation.screen.home_screen.components.devices.DevicesScreen
+import com.yilmaz.ble.features.ble.presentation.screen.home_screen.components.receive_service_value.ReceiveServiceValueScreen
 
 @Composable
 fun HomeScreen(
@@ -41,14 +42,26 @@ fun HomeScreen(
                 .fillMaxSize()
                 .padding(it)
         ) {
-            DevicesScreen(
-                pairedDevices = state.pairedDevices,
-                scannedDevices = state.scannedDevices,
-                onPairedDevicesItemClick = { device -> viewModel.connect(device.address) },
-                onScannedDevicesItemClick = { device -> viewModel.pair(device.address) },
-                onStartScan = { viewModel.startScan() },
-                onStopScan = { viewModel.stopScan() },
-            )
+            when {
+                state.isConnected -> {
+                    ReceiveServiceValueScreen(
+                        state.receivedValues,
+                        state.connectedDeviceName,
+                        onDisconnect = { viewModel.disconnect() }
+                    )
+                }
+
+                else -> {
+                    DevicesScreen(
+                        pairedDevices = state.pairedDevices,
+                        scannedDevices = state.scannedDevices,
+                        onPairedDevicesItemClick = { device -> viewModel.connect(device.address) },
+                        onScannedDevicesItemClick = { device -> viewModel.pair(device.address) },
+                        onStartScan = { viewModel.startScan() },
+                        onStopScan = { viewModel.stopScan() },
+                    )
+                }
+            }
         }
     }
 }

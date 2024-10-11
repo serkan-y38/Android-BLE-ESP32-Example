@@ -1,4 +1,4 @@
-package com.yilmaz.ble.features.ble.presentation.screen.home_screen.components
+package com.yilmaz.ble.features.ble.presentation.screen.home_screen.components.devices
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement

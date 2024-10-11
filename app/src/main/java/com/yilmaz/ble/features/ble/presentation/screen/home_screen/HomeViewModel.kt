@@ -23,11 +23,13 @@ class HomeViewModel @Inject constructor(
     val state = combine(
         bleController.scannedDevices,
         bleController.pairedDevices,
+        bleController.receivedValues,
         _state
-    ) { scannedDevices, pairedDevices, state ->
+    ) { scannedDevices, pairedDevices, receivedValues, state ->
         state.copy(
             scannedDevices = scannedDevices,
-            pairedDevices = pairedDevices
+            pairedDevices = pairedDevices,
+            receivedValues = receivedValues
         )
     }.stateIn(
         viewModelScope,
@@ -37,6 +39,8 @@ class HomeViewModel @Inject constructor(
 
     init {
         getMessage()
+        isConnected()
+        getConnectedDeviceName()
     }
 
     private fun getMessage() {
@@ -44,6 +48,22 @@ class HomeViewModel @Inject constructor(
             _state.update {
                 it.copy(
                     message = message
+                )
+            }
+        }.launchIn(viewModelScope)
+    }
+
+    private fun isConnected() {
+        bleController.isConnected.onEach { isConnected ->
+            _state.update { it.copy(isConnected = isConnected) }
+        }.launchIn(viewModelScope)
+    }
+
+    private fun getConnectedDeviceName() {
+        bleController.connectedDeviceName.onEach { name ->
+            _state.update {
+                it.copy(
+                    connectedDeviceName = name
                 )
             }
         }.launchIn(viewModelScope)
@@ -63,6 +83,10 @@ class HomeViewModel @Inject constructor(
 
     fun connect(address: String) {
         bleController.connect(address)
+    }
+
+    fun disconnect() {
+        bleController.disConnect()
     }
 
     override fun onCleared() {
