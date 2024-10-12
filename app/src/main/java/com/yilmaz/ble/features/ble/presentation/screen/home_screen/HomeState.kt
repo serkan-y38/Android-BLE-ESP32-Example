@@ -8,5 +8,6 @@ data class HomeState(
     val receivedValues: List<String> = emptyList(),
     val message: String? = null,
     val isConnected: Boolean = false,
+    val isPairing: Boolean = false,
     val connectedDeviceName: String = ""
 )

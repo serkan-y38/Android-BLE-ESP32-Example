@@ -11,6 +11,7 @@ interface BLEController {
 
     val message: SharedFlow<String>
     val isConnected: StateFlow<Boolean>
+    val isPairing: StateFlow<Boolean>
     val connectedDeviceName: StateFlow<String>
 
     fun startScan()
@@ -24,4 +25,6 @@ interface BLEController {
     fun connect(address: String)
 
     fun disConnect()
+
+    fun sendValue(text: String)
 }

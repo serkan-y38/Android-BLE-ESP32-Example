@@ -10,6 +10,7 @@ import android.os.Build
 class PairDeviceReceiver(
     private val onPairRequest: () -> Unit,
     private val onPairedSuccessfully: (BluetoothDevice?) -> Unit,
+    private val onPairing: (BluetoothDevice?) -> Unit,
     private val onPairingError: (BluetoothDevice?) -> Unit,
 ) : BroadcastReceiver() {
 
@@ -32,10 +33,18 @@ class PairDeviceReceiver(
                     BluetoothDevice.BOND_NONE
                 )
 
-                if (bondState == BluetoothDevice.BOND_BONDED) {
-                    onPairedSuccessfully(device)
-                } else {
-                    onPairingError(device)
+                when (bondState) {
+                    BluetoothDevice.BOND_BONDED -> {
+                        onPairedSuccessfully(device)
+                    }
+
+                    BluetoothDevice.BOND_BONDING -> {
+                        onPairing(device)
+                    }
+
+                    else -> {
+                        onPairingError(device)
+                    }
                 }
             }
 
@@ -66,9 +75,10 @@ class PairDeviceReceiver(
 
                         d.setPin(pinBytes)
                         d.setPairingConfirmation(true)
+
+                        onPairRequest()
                     }
                 }
-                onPairRequest()
             }
         }
     }

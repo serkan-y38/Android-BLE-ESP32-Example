@@ -70,6 +70,10 @@ class BLEControllerImpl(
     override val isConnected: StateFlow<Boolean>
         get() = _isConnected.asStateFlow()
 
+    private val _isPairing = MutableStateFlow(false)
+    override val isPairing: StateFlow<Boolean>
+        get() = _isPairing.asStateFlow()
+
     private val _connectedDeviceName = MutableStateFlow("")
     override val connectedDeviceName: StateFlow<String>
         get() = _connectedDeviceName.asStateFlow()
@@ -83,6 +87,33 @@ class BLEControllerImpl(
             }
         }
     }
+
+    private val pairDeviceReceiver = PairDeviceReceiver(
+        onPairRequest = {
+            _isPairing.update { true }
+            Log.i("PairDeviceReceiver", "Pairing request sent")
+        },
+        onPairedSuccessfully = { device ->
+            setMessage("Connected to ${device?.address}")
+
+            stopScan()
+            getPairedDevices()
+
+            _scannedDevices.update { emptyList() }
+            _isPairing.update { false }
+        },
+        onPairingError = { device ->
+            setMessage("Cannot connected to device ${device?.address}")
+
+            stopScan()
+
+            _scannedDevices.update { emptyList() }
+            _isPairing.update { false }
+        },
+        onPairing = {
+            _isPairing.update { true }
+        }
+    )
 
     private val gattCallback = object : BluetoothGattCallback() {
 
@@ -102,7 +133,7 @@ class BLEControllerImpl(
                 }
 
             } else {
-                setMessage("Error $status encountered for ${gatt.device.address} Disconnecting...")
+                setMessage("Error $status encountered for ${gatt.device.address}")
                 _isConnected.update { false }
                 _connectedDeviceName.update { "" }
                 gatt.close()
@@ -111,8 +142,6 @@ class BLEControllerImpl(
 
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                gatt.printGattTable()
-
                 gatt.getService(UUID.fromString(SERVICE_UUID)).let { service ->
 
                     val characteristic =
@@ -145,7 +174,7 @@ class BLEControllerImpl(
                     setMessage("Service not found!")
                 }
             } else {
-                setMessage("Service discovery failed with status: $status")
+                setMessage("Service discovery failed -> status: $status")
             }
         }
 
@@ -166,24 +195,20 @@ class BLEControllerImpl(
                 }
             }
         }
-    }
 
-    private val pairDeviceReceiver = PairDeviceReceiver(
-        onPairRequest = {
-            setMessage("Pairing request sent")
-        },
-        onPairedSuccessfully = { device ->
-            setMessage("Connected to ${device?.address}")
-
-            stopScan()
-            getPairedDevices()
-
-            _scannedDevices.update { emptyList() }
-        },
-        onPairingError = { device ->
-            setMessage("Cannot connected to device ${device?.address}")
+        override fun onCharacteristicWrite(
+            gatt: BluetoothGatt?,
+            characteristic: BluetoothGattCharacteristic?,
+            status: Int
+        ) {
+            super.onCharacteristicWrite(gatt, characteristic, status)
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                setMessage("Value sent successfully to server: ${gatt?.device?.address}")
+            } else {
+                setMessage("Failed to send value -> status: $status")
+            }
         }
-    )
+    }
 
     init {
         getPairedDevices()
@@ -200,10 +225,7 @@ class BLEControllerImpl(
             return
         }
 
-        if (isScanning) {
-            setMessage("Scanning")
-            return
-        }
+        if (isScanning) return
 
         if (!isPairDeviceReceiverRegistered) {
             registerPairDeviceReceiver()
@@ -228,12 +250,10 @@ class BLEControllerImpl(
             return
         }
 
-        if (!isScanning) {
-            setMessage("!Scanning")
-            return
-        }
+        if (!isScanning) return
 
         bluetoothAdapter?.bluetoothLeScanner?.stopScan(leScanCallback)
+        _scannedDevices.update { emptyList() }
         isScanning = false
     }
 
@@ -261,6 +281,8 @@ class BLEControllerImpl(
     override fun connect(address: String) {
         val device = bluetoothAdapter?.getRemoteDevice(address)
         bluetoothGatt = device?.connectGatt(context, false, gattCallback, TRANSPORT_LE)
+
+        stopScan()
     }
 
     override fun disConnect() {
@@ -272,6 +294,29 @@ class BLEControllerImpl(
         _receivedValues.update { emptyList() }
 
         setMessage("Successfully disconnected from ${bluetoothGatt?.device?.address}")
+    }
+
+    override fun sendValue(text: String) {
+        val service = bluetoothGatt?.getService(UUID.fromString(SERVICE_UUID))
+        val characteristic = service?.getCharacteristic(UUID.fromString(CHARACTERISTIC_UUID))
+
+        characteristic?.let {
+            val data = text.toByteArray(Charsets.UTF_8)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                bluetoothGatt?.writeCharacteristic(
+                    it,
+                    data,
+                    BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                it.value = data
+                @Suppress("DEPRECATION")
+                bluetoothGatt?.writeCharacteristic(it)
+            }
+        } ?: run {
+            setMessage("Characteristic not found!")
+        }
     }
 
     private fun getPairedDevices() {
@@ -335,29 +380,9 @@ class BLEControllerImpl(
     private fun hasPermission(permission: String) =
         context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
 
-    private fun BluetoothGatt.printGattTable() {
-        if (services.isEmpty()) {
-            Log.i(
-                "printGattTable",
-                "No service and characteristic available"
-            )
-        } else {
-            services.forEach { service ->
-                val characteristicsTable = service.characteristics.joinToString(
-                    separator = "\n|--",
-                    prefix = "|--"
-                ) { it.uuid.toString() }
-                Log.i(
-                    "printGattTable",
-                    "\nService ${service.uuid}\nCharacteristics:\n$characteristicsTable"
-                )
-            }
-        }
-    }
-
     companion object {
         private const val SERVICE_UUID = "22bf526e-1f59-40fb-a344-0bea8c1bfef2"
-        private const val CHARACTERISTIC_UUID = "22bf526e-1f59-40fb-a344-0bea8c1bfef2"
+        private const val CHARACTERISTIC_UUID = "cdc7651d-88bd-4c0d-8c90-4572db5aa14b"
         private const val CLIENT_CHARACTERISTIC_CONFIG_UUID = "00002902-0000-1000-8000-00805f9b34fb"
     }
 }

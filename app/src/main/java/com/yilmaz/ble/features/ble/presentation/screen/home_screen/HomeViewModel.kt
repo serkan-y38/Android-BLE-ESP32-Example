@@ -40,6 +40,7 @@ class HomeViewModel @Inject constructor(
     init {
         getMessage()
         isConnected()
+        isPairing()
         getConnectedDeviceName()
     }
 
@@ -56,6 +57,12 @@ class HomeViewModel @Inject constructor(
     private fun isConnected() {
         bleController.isConnected.onEach { isConnected ->
             _state.update { it.copy(isConnected = isConnected) }
+        }.launchIn(viewModelScope)
+    }
+
+    private fun isPairing() {
+        bleController.isPairing.onEach { isPairing ->
+            _state.update { it.copy(isPairing = isPairing) }
         }.launchIn(viewModelScope)
     }
 
@@ -87,6 +94,10 @@ class HomeViewModel @Inject constructor(
 
     fun disconnect() {
         bleController.disConnect()
+    }
+
+    fun sendValue(text: String) {
+        bleController.sendValue(text)
     }
 
     override fun onCleared() {

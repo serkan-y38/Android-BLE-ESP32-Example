@@ -1,4 +1,4 @@
-package com.yilmaz.ble.features.ble.presentation.screen.home_screen.components.receive_service_value
+package com.yilmaz.ble.features.ble.presentation.screen.home_screen.components.receive_send_service_value
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -10,23 +10,32 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun ReceiveServiceValueScreen(
+fun ReceiveSendServiceValueScreen(
     receivedValues: List<String>,
     connectedDeviceName: String,
-    onDisconnect: () -> Unit
+    onDisconnect: () -> Unit,
+    onSendValue: (String) -> Unit,
 ) {
+    val text = rememberSaveable { mutableStateOf("") }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
     Column(
         modifier = Modifier.fillMaxSize()
     ) {
@@ -63,6 +72,33 @@ fun ReceiveServiceValueScreen(
                 )
                 HorizontalDivider()
             }
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextField(
+                value = text.value,
+                onValueChange = { text.value = it },
+                modifier = Modifier.weight(1f),
+                placeholder = {
+                    Text(text = "Send value to ble server")
+                },
+                trailingIcon = {
+                    IconButton(onClick = {
+                        onSendValue(text.value)
+                        text.value = ""
+                        keyboardController?.hide()
+                    }) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Send,
+                            contentDescription = "Send"
+                        )
+                    }
+                }
+            )
         }
     }
 }

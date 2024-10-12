@@ -3,19 +3,23 @@ package com.yilmaz.ble.features.ble.presentation.screen.home_screen
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.yilmaz.ble.features.ble.presentation.screen.home_screen.components.devices.DevicesScreen
-import com.yilmaz.ble.features.ble.presentation.screen.home_screen.components.receive_service_value.ReceiveServiceValueScreen
+import com.yilmaz.ble.features.ble.presentation.screen.home_screen.components.receive_send_service_value.ReceiveSendServiceValueScreen
 
 @Composable
 fun HomeScreen(
@@ -44,11 +48,16 @@ fun HomeScreen(
         ) {
             when {
                 state.isConnected -> {
-                    ReceiveServiceValueScreen(
+                    ReceiveSendServiceValueScreen(
                         state.receivedValues,
                         state.connectedDeviceName,
-                        onDisconnect = { viewModel.disconnect() }
+                        onDisconnect = { viewModel.disconnect() },
+                        onSendValue = { text -> viewModel.sendValue(text) }
                     )
+                }
+
+                state.isPairing -> {
+                    ConnectingDialog()
                 }
 
                 else -> {
@@ -64,4 +73,25 @@ fun HomeScreen(
             }
         }
     }
+}
+
+@Composable
+fun ConnectingDialog() {
+    AlertDialog(
+        properties = DialogProperties(dismissOnClickOutside = false),
+        title = {
+            Text(text = "Connecting...")
+        },
+        text = {
+            Text(text = "Please wait while connecting to device")
+        },
+        onDismissRequest = { },
+        confirmButton = {
+            TextButton(
+                onClick = {  }
+            ) {
+                Text("OK")
+            }
+        }
+    )
 }
